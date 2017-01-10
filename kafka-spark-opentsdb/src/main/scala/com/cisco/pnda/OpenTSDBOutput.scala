@@ -1,10 +1,10 @@
 /**
-  * Name:       OpenTSDBOutput
-  * Purpose:    Write a dstream to OpenTSDB
-  * Author:     PNDA team
-  *
-  * Created:    07/04/2016
-  */
+ * Name:       OpenTSDBOutput
+ * Purpose:    Write a dstream to OpenTSDB
+ * Author:     PNDA team
+ *
+ * Created:    07/04/2016
+ */
 
 /*
 Copyright (c) 2016 Cisco and/or its affiliates.
@@ -37,46 +37,44 @@ import org.json4s.JsonDSL._
 
 class OpenTSDBOutput extends Serializable {
 
-
   def putOpentsdb[T](opentsdbIP: String,
-      stream: DStream[String]) = {
+    stream: DStream[String]) = {
     stream.mapPartitions(partition => {
       var count = 0;
-      partition.foreach(rowData =>
-        {
+      partition.foreach(rowData => {
+        val json = parse(rowData.replace("'", "\""))
+        val host = compact(render((json \\ "host"))).replace("\"", "")
+        val interface = compact(render((json \\ "interface"))).replace("\"", "")
+        val timestampStr = compact(render((json \\ "timestamp"))).replace("\"", "")
+        val inPkts = (compact(render((json \\ "inPkts"))).replace("\"", "")).toInt
+        val outPkts = (compact(render((json \\ "outPkts"))).replace("\"", "")).toInt
+        val timestamp = Timestamp.valueOf(timestampStr.replace("T", " ").replace("Z", "")).getTime
 
-          val json = parse(rowData.replace("'", "\""))
-          val host = compact(render((json \\ "host"))).replace("\"", "")
-          val timestampStr = compact(render((json \\ "timestamp"))).replace("\"", "")
-          val value = (compact(render((json \\ "value"))).replace("\"", "")).toDouble
-          val collectd_type = compact(render((json \\ "collectd_type"))).replace("\"", "")
-          var metric:String = "kso.collectd"
-          metric = metric.concat("." + collectd_type)
-          val timestamp = Timestamp.valueOf(timestampStr.replace("T"," ").replace("Z","")).getTime
-
+        List(("inpkts", inPkts), ("outpkts", outPkts)).map{ case (name, value) => {
           val body = f"""{
-                    |        "metric": "$metric",
+                    |        "metric": "collectd.$name" ,
                     |        "value": "$value",
                     |        "timestamp": $timestamp,
-                    |        "tags": {"host": "$host"}
+                    |        "tags": {"host": "$host", "interface": "$interface"}
                     |}""".stripMargin
 
           var openTSDBUrl = "http://" + opentsdbIP + "/api/put"
           try {
-                val httpClient = new DefaultHttpClient()
-                val post = new HttpPost(openTSDBUrl)
-                post.setHeader("Content-type", "application/json")
-                post.setEntity(new StringEntity(body))
-                httpClient.execute(post)
+            val httpClient = new DefaultHttpClient()
+            val post = new HttpPost(openTSDBUrl)
+            post.setHeader("Content-type", "application/json")
+            post.setEntity(new StringEntity(body))
+            httpClient.execute(post)
 
-            } catch {
-                case NonFatal(t) => {
-                    
-                }
+          } catch {
+            case NonFatal(t) => {
+
             }
+          }
 
           count += 1
-        });
+        } }
+      });
       Iterator[Integer](count)
     });
   }

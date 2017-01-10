@@ -1,11 +1,11 @@
 /**
-  * Name:       KafkaPipeline
-  * Purpose:    Set up the spark streaming processing graph.
-  * Author:     PNDA team
-  *
-  * Created:    07/04/2016
-  */
-  
+ * Name:       KafkaPipeline
+ * Purpose:    Set up the spark streaming processing graph.
+ * Author:     PNDA team
+ *
+ * Created:    07/04/2016
+ */
+
 /*
 Copyright (c) 2016 Cisco and/or its affiliates.
 
@@ -34,42 +34,42 @@ import org.apache.log4j.Logger;
 
 class KafkaPipeline extends Serializable {
 
-    object Holder extends Serializable {
-       @transient lazy val logger = Logger.getLogger(getClass.getName)
+  object Holder extends Serializable {
+    @transient lazy val logger = Logger.getLogger(getClass.getName)
+  }
+
+  def create() = {
+
+    val parseMessages = (messagesDstream: DStream[DataPlatformEvent]) => {
+
+      val parsedMessages = messagesDstream.flatMap(dataPlatformEvent => {
+        val parsed = dataPlatformEvent.getRawdata();
+        Some(parsed);
+      });
+      parsedMessages
+    }: DStream[String];
+
+    val props = AppConfig.loadProperties();
+    val checkpointDirectory = props.getProperty("app.checkpoint_path");
+    val batchSizeSeconds = Integer.parseInt(props.getProperty("app.batch_size_seconds"));
+
+    val sparkConf = new SparkConf();
+    Holder.logger.info("Creating new spark context with checkpoint directory: " + checkpointDirectory)
+    val ssc = new StreamingContext(sparkConf, Seconds(batchSizeSeconds));
+
+    if (checkpointDirectory.length() > 0) {
+      ssc.checkpoint(checkpointDirectory);
     }
 
-    def create() = {
+    val inputStream = new KafkaInput().readFromKafka(ssc);
+    val parsedStream = parseMessages(inputStream);
+    val writeCounts: DStream[Integer] =
 
-        val parseMessages = (messagesDstream: DStream[DataPlatformEvent]) => {
+      new OpenTSDBOutput().putOpentsdb(
+        props.getProperty("opentsdb.ip"),
+        parsedStream);
 
-            val parsedMessages = messagesDstream.flatMap(dataPlatformEvent => {
-            val parsed = dataPlatformEvent.getRawdata();
-            Some(parsed);
-            });
-            parsedMessages
-        }: DStream[String];
-
-        val props = AppConfig.loadProperties();
-        val checkpointDirectory = props.getProperty("app.checkpoint_path");
-        val batchSizeSeconds = Integer.parseInt(props.getProperty("app.batch_size_seconds"));
-
-        val sparkConf = new SparkConf();
-        Holder.logger.info("Creating new spark context with checkpoint directory: " + checkpointDirectory)
-        val ssc = new StreamingContext(sparkConf, Seconds(batchSizeSeconds));
-
-        if (checkpointDirectory.length() > 0) {
-            ssc.checkpoint(checkpointDirectory);
-        }
-
-        val inputStream = new KafkaInput().readFromKafka(ssc);
-        val parsedStream = parseMessages(inputStream);
-        val writeCounts: DStream[Integer] =
-        
-        new OpenTSDBOutput().putOpentsdb(
-            props.getProperty("opentsdb.ip"),
-            parsedStream);
-
-        writeCounts.reduce(_ + _).print(1);
-        ssc;
-    }: StreamingContext
+    writeCounts.reduce(_ + _).print(1);
+    ssc;
+  }: StreamingContext
 }

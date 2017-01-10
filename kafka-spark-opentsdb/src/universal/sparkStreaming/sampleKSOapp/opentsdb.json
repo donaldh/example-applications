@@ -1,8 +1,8 @@
 [
     {
-        "name": "kso.collectd.cpu"
+        "name": "collectd.inpkts"
     },
     {
-        "name": "kso.collectd.memory"
+        "name": "collectd.outpkts"
     }
 ]
